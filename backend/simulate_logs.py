@@ -5,6 +5,8 @@ import time
 
 # Choose which router log to replay
 CSV_FILE = os.path.join("..", "datasets", "Router_A_router_log_15_days.csv")
+CSV_FILE = os.path.join("..", "datasets", "Router_B_router_log_15_days.csv")
+CSV_FILE = os.path.join("..", "datasets", "Router_C_router_log_15_days.csv")
 API_URL = "http://localhost:8000/api/ingest"
 
 # Load CSV

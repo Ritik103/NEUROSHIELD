@@ -1,0 +1,27 @@
+{
+  "feature_cols": [
+    "utilization",
+    "hour_of_day",
+    "day_of_week",
+    "is_weekend",
+    "Bandwidth Used (MB/s)_diff1",
+    "Latency (ms)_diff1",
+    "Traffic Volume (MB/s)_diff1",
+    "Bandwidth Used (MB/s)_ma5",
+    "Bandwidth Used (MB/s)_ma15",
+    "Bandwidth Used (MB/s)_ma60",
+    "Latency (ms)_ma5",
+    "Latency (ms)_ma15",
+    "Latency (ms)_ma60",
+    "Traffic Volume (MB/s)_ma5",
+    "Traffic Volume (MB/s)_ma15",
+    "Traffic Volume (MB/s)_ma60",
+    "Device Name_Router_A"
+  ],
+  "device_cols": [
+    "Device Name_Router_A"
+  ],
+  "label_name": "Congestion_Label",
+  "threshold": 0.6,
+  "model": "logreg"
+}

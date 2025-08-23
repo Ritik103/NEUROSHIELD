@@ -1,10 +1,61 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, WebSocket
 from pydantic import BaseModel, Field
 from typing import Optional
 import redis.asyncio as redis
 import os, json
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="SmartNet Backend")
+from app.routers import actions, predict, dashboard
+from app.ws import websocket_endpoint
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Startup and shutdown events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Starting NEUROSHIELD Backend...")
+    
+    # Initialize services
+    try:
+        from app.services.broadcaster import initialize_broadcaster
+        from app.services.network_automation import initialize_automation_service
+        
+        await initialize_broadcaster()
+        await initialize_automation_service()
+        logger.info("All services initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing services: {e}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down NEUROSHIELD Backend...")
+    try:
+        from app.services.broadcaster import broadcaster
+        from app.services.network_automation import automation_service
+        
+        await broadcaster.stop()
+        await automation_service.stop()
+        logger.info("All services stopped")
+    except Exception as e:
+        logger.error(f"Error stopping services: {e}")
+
+app = FastAPI(title="NEUROSHIELD Backend", lifespan=lifespan)
+
+# Include routers
+app.include_router(actions.router)
+app.include_router(predict.router)
+app.include_router(dashboard.router)
+
+# WebSocket endpoint
+@app.websocket("/ws")
+async def websocket_main(websocket: WebSocket):
+    await websocket_endpoint(websocket)
 
 # Redis config
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
