@@ -20,30 +20,34 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting NEUROSHIELD Backend...")
     
-    # Initialize services
-    try:
-        from app.services.broadcaster import initialize_broadcaster
-        from app.services.network_automation import initialize_automation_service
-        
-        await initialize_broadcaster()
-        await initialize_automation_service()
-        logger.info("All services initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing services: {e}")
+                # Initialize services
+            try:
+                from app.services.broadcaster import initialize_broadcaster
+                from app.services.network_automation import initialize_automation_service
+                from app.services.redis_processor import initialize_redis_processor
+                
+                await initialize_broadcaster()
+                await initialize_automation_service()
+                await initialize_redis_processor()
+                logger.info("All services initialized successfully")
+            except Exception as e:
+                logger.error(f"Error initializing services: {e}")
     
     yield
     
-    # Shutdown
-    logger.info("Shutting down NEUROSHIELD Backend...")
-    try:
-        from app.services.broadcaster import broadcaster
-        from app.services.network_automation import automation_service
-        
-        await broadcaster.stop()
-        await automation_service.stop()
-        logger.info("All services stopped")
-    except Exception as e:
-        logger.error(f"Error stopping services: {e}")
+                # Shutdown
+            logger.info("Shutting down NEUROSHIELD Backend...")
+            try:
+                from app.services.broadcaster import broadcaster
+                from app.services.network_automation import automation_service
+                from app.services.redis_processor import stop_redis_processor
+                
+                await broadcaster.stop()
+                await automation_service.stop()
+                await stop_redis_processor()
+                logger.info("All services stopped")
+            except Exception as e:
+                logger.error(f"Error stopping services: {e}")
 
 app = FastAPI(title="NEUROSHIELD Backend", lifespan=lifespan)
 

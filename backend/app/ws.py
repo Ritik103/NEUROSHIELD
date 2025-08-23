@@ -82,6 +82,25 @@ class ConnectionManager:
         }
         await self.broadcast_to_device_subscribers(device, json.dumps(message))
 
+    async def send_automation_update(self, device: str, action_data: dict):
+        """Send real-time automation action updates for a device"""
+        message = {
+            "type": "automation_update",
+            "device": device,
+            "timestamp": datetime.now().isoformat(),
+            "data": action_data
+        }
+        await self.broadcast_to_device_subscribers(device, json.dumps(message))
+
+    async def send_policy_update(self, policy_data: dict):
+        """Send policy updates to all subscribers"""
+        message = {
+            "type": "policy_update",
+            "timestamp": datetime.now().isoformat(),
+            "data": policy_data
+        }
+        await self.broadcast(json.dumps(message))
+
     async def send_system_alert(self, alert_type: str, message: str, device: str = None):
         """Send system alerts"""
         alert = {

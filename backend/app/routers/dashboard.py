@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 import json
 import logging
 import pandas as pd
+import os
+import redis.asyncio as redis
 
 from app.services.model_service import ModelService
 from app.services.db import db_service
@@ -78,6 +80,142 @@ async def get_dashboard_overview():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting dashboard overview: {str(e)}")
+
+@router.get("/api/dashboard/automation/policies")
+async def get_automation_policies():
+    """Get current automation policies"""
+    try:
+        policies = model_service.get_automation_policies()
+        return {
+            "policies": policies,
+            "last_updated": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting automation policies: {str(e)}")
+
+@router.post("/api/dashboard/automation/policies")
+async def update_automation_policies(policies: Dict[str, Any]):
+    """Update automation policies"""
+    try:
+        success = model_service.update_automation_policies(policies)
+        if success:
+            return {"message": "Policies updated successfully", "policies": model_service.get_automation_policies()}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update policies")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating policies: {str(e)}")
+
+@router.get("/api/dashboard/predictions/automated")
+async def get_automated_predictions(k: int = Query(120, description="Number of recent data points to use")):
+    """Get predictions with automation evaluation for all devices"""
+    try:
+        predictions = await model_service.evaluate_all_devices_with_automation(k=k)
+        return {
+            "predictions": predictions,
+            "total_devices": len(predictions),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting automated predictions: {str(e)}")
+
+@router.get("/api/dashboard/automation/actions")
+async def get_pending_automation_actions():
+    """Get pending automation actions from Redis queue"""
+    try:
+        # Get Redis connection
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+        action_queue_key = os.getenv("ACTION_QUEUE_KEY", "neuroshield:actions")
+        
+        # Get all pending actions (sorted by priority)
+        actions = await r.zrange(action_queue_key, 0, -1, withscores=True)
+        
+        parsed_actions = []
+        for action_json, score in actions:
+            try:
+                action_data = json.loads(action_json)
+                action_data["priority_score"] = score
+                parsed_actions.append(action_data)
+            except json.JSONDecodeError:
+                continue
+        
+        # Sort by priority (lower score = higher priority)
+        parsed_actions.sort(key=lambda x: x["priority_score"])
+        
+        return {
+            "pending_actions": parsed_actions,
+            "total_pending": len(parsed_actions),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting automation actions: {str(e)}")
+
+@router.post("/api/dashboard/automation/actions/{action_id}/execute")
+async def execute_automation_action(action_id: str):
+    """Execute a specific automation action"""
+    try:
+        # Get Redis connection
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+        action_queue_key = os.getenv("ACTION_QUEUE_KEY", "neuroshield:actions")
+        
+        # Find and remove the action
+        actions = await r.zrange(action_queue_key, 0, -1, withscores=True)
+        target_action = None
+        
+        for action_json, score in actions:
+            try:
+                action_data = json.loads(action_json)
+                if action_data.get("timestamp") == action_id:  # Using timestamp as ID
+                    target_action = action_data
+                    await r.zrem(action_queue_key, action_json)
+                    break
+            except json.JSONDecodeError:
+                continue
+        
+        if not target_action:
+            raise HTTPException(status_code=404, detail="Action not found")
+        
+        # Execute the action via network automation service
+        action_type = target_action["action_type"]
+        device = target_action["device"]
+        parameters = target_action["parameters"]
+        
+        # Map action types to automation service
+        if action_type == "congestion_mitigation":
+            action_id = await automation_service.queue_action(
+                ActionType.CONGESTION_MITIGATION,
+                device,
+                parameters
+            )
+        elif action_type == "bandwidth_optimization":
+            action_id = await automation_service.queue_action(
+                ActionType.BANDWIDTH_ADJUSTMENT,
+                device,
+                parameters
+            )
+        elif action_type == "latency_optimization":
+            action_id = await automation_service.queue_action(
+                ActionType.QOS_UPDATE,
+                device,
+                parameters
+            )
+        else:
+            # Default to general action
+            action_id = await automation_service.queue_action(
+                ActionType.CONFIG_UPDATE,
+                device,
+                parameters
+            )
+        
+        return {
+            "message": "Action executed successfully",
+            "action_id": action_id,
+            "action_type": action_type,
+            "device": device
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error executing action: {str(e)}")
 
 @router.get("/api/dashboard/device/{device_name}")
 async def get_device_dashboard(device_name: str, hours: int = Query(24, description="Hours of data to retrieve")):

@@ -2,7 +2,10 @@
 import os
 import sys
 import json
+import asyncio
+import logging
 from pathlib import Path
+from typing import Dict, List, Any, Optional
 
 # Add worker dir so we can reuse feature_builder
 HERE = Path(__file__).resolve()
@@ -17,6 +20,7 @@ from feature_builder import load_router_logs, engineer_core_features
 import joblib
 import pandas as pd
 import sqlite3
+import redis.asyncio as redis
 
 MODEL_DIR = BASE_BACKEND / "models_store"
 
@@ -24,6 +28,19 @@ MODEL_DIR = BASE_BACKEND / "models_store"
 class ModelService:
     def __init__(self):
         self._load_meta_and_models()
+        self.logger = logging.getLogger(__name__)
+        
+        # Redis configuration for action queue
+        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self.action_queue_key = os.getenv("ACTION_QUEUE_KEY", "neuroshield:actions")
+        
+        # Automation policies
+        self.automation_policies = {
+            "congestion_threshold": 0.6,
+            "anomaly_threshold": 0.8,
+            "high_utilization_threshold": 0.85,
+            "latency_threshold": 50.0
+        }
 
     def _load_meta_and_models(self):
         meta_path = MODEL_DIR / "meta.json"
@@ -144,3 +161,152 @@ class ModelService:
                 res = {"device": d, "ok": False, "error": str(e)}
             results.append(res)
         return results
+
+    async def _get_redis_connection(self):
+        """Get Redis connection for action queue"""
+        try:
+            return redis.from_url(self.redis_url, decode_responses=True)
+        except Exception as e:
+            self.logger.error(f"Failed to connect to Redis: {e}")
+            return None
+
+    async def enqueue_automation_action(self, device: str, action_type: str, 
+                                      parameters: Dict[str, Any], priority: int = 1):
+        """Enqueue an automation action to Redis"""
+        try:
+            r = await self._get_redis_connection()
+            if not r:
+                return False
+            
+            action_data = {
+                "device": device,
+                "action_type": action_type,
+                "parameters": parameters,
+                "priority": priority,
+                "timestamp": pd.Timestamp.now().isoformat(),
+                "source": "model_service"
+            }
+            
+            # Use Redis sorted set for priority-based queuing
+            score = float(priority) + (pd.Timestamp.now().timestamp() / 1000000)
+            await r.zadd(self.action_queue_key, {json.dumps(action_data): score})
+            
+            self.logger.info(f"Enqueued action: {action_type} for {device}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to enqueue action: {e}")
+            return False
+
+    async def evaluate_and_automate(self, device: str, k: int = 120):
+        """Evaluate predictions and trigger automation based on policies"""
+        try:
+            # Get prediction
+            prediction = self.predict_for_device(device, k=k)
+            if not prediction.get("ok"):
+                return prediction
+            
+            # Get latest metrics for additional context
+            df = self.get_last_k_for_device(device, k=1)
+            if not df.empty:
+                latest = df.iloc[-1]
+                utilization = latest.get("Bandwidth Used (MB/s)", 0) / max(latest.get("Bandwidth Allocated (MB/s)", 1), 1)
+                latency = latest.get("Latency (ms)", 0)
+            else:
+                utilization = 0
+                latency = 0
+            
+            # Apply automation policies
+            actions_triggered = []
+            
+            # Congestion policy
+            if prediction.get("congestion_prob", 0) > self.automation_policies["congestion_threshold"]:
+                action_params = {
+                    "congestion_probability": prediction["congestion_prob"],
+                    "severity": "high" if prediction["congestion_prob"] > 0.8 else "medium"
+                }
+                await self.enqueue_automation_action(
+                    device, "congestion_mitigation", action_params, priority=2
+                )
+                actions_triggered.append("congestion_mitigation")
+            
+            # Anomaly policy
+            if prediction.get("anomaly", 0) == 1:
+                action_params = {
+                    "anomaly_score": 1.0,
+                    "detection_method": "isolation_forest"
+                }
+                await self.enqueue_automation_action(
+                    device, "anomaly_investigation", action_params, priority=3
+                )
+                actions_triggered.append("anomaly_investigation")
+            
+            # High utilization policy
+            if utilization > self.automation_policies["high_utilization_threshold"]:
+                action_params = {
+                    "utilization": utilization,
+                    "current_bandwidth": latest.get("Bandwidth Used (MB/s", 0)
+                }
+                await self.enqueue_automation_action(
+                    device, "bandwidth_optimization", action_params, priority=1
+                )
+                actions_triggered.append("bandwidth_optimization")
+            
+            # High latency policy
+            if latency > self.automation_policies["latency_threshold"]:
+                action_params = {
+                    "latency": latency,
+                    "threshold": self.automation_policies["latency_threshold"]
+                }
+                await self.enqueue_automation_action(
+                    device, "latency_optimization", action_params, priority=1
+                )
+                actions_triggered.append("latency_optimization")
+            
+            # Add automation results to prediction
+            prediction["automation_triggered"] = actions_triggered
+            prediction["automation_policies"] = self.automation_policies
+            
+            return prediction
+            
+        except Exception as e:
+            self.logger.error(f"Automation evaluation failed for {device}: {e}")
+            return {"device": device, "ok": False, "error": str(e)}
+
+    async def evaluate_all_devices_with_automation(self, k: int = 120):
+        """Evaluate all devices and trigger automation policies"""
+        devices = self.get_devices()
+        results = []
+        
+        for device in devices:
+            try:
+                result = await self.evaluate_and_automate(device, k=k)
+                results.append(result)
+            except Exception as e:
+                results.append({
+                    "device": device, 
+                    "ok": False, 
+                    "error": str(e)
+                })
+        
+        return results
+
+    def get_automation_policies(self) -> Dict[str, Any]:
+        """Get current automation policies"""
+        return self.automation_policies.copy()
+
+    def update_automation_policies(self, new_policies: Dict[str, Any]) -> bool:
+        """Update automation policies"""
+        try:
+            for key, value in new_policies.items():
+                if key in self.automation_policies:
+                    if key.endswith("_threshold"):
+                        self.automation_policies[key] = float(value)
+                    else:
+                        self.automation_policies[key] = value
+            
+            self.logger.info(f"Updated automation policies: {new_policies}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to update policies: {e}")
+            return False
