@@ -2,13 +2,14 @@
 """
 Redis Action Processor Service
 Processes automation actions from Redis queue and executes them
+Falls back to in-memory storage when Redis is not available
 """
 
 import asyncio
 import json
 import logging
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import redis.asyncio as redis
 
@@ -24,26 +25,36 @@ class RedisActionProcessor:
         self.action_queue_key = os.getenv("ACTION_QUEUE_KEY", "neuroshield:actions")
         self.running = False
         self.processing_interval = 5  # seconds
+        self.redis_available = False
+        self.fallback_queue: List[Dict[str, Any]] = []  # In-memory fallback
         
     async def _get_redis_connection(self):
-        """Get Redis connection"""
+        """Get Redis connection with fallback"""
         try:
-            return redis.from_url(self.redis_url, decode_responses=True)
+            r = redis.from_url(self.redis_url, decode_responses=True)
+            # Test connection
+            await r.ping()
+            self.redis_available = True
+            logger.info("Redis connection established")
+            return r
         except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
+            self.redis_available = False
+            logger.warning(f"Redis not available, using in-memory fallback: {e}")
             return None
     
     async def start(self):
         """Start the action processor"""
         if not self.running:
             self.running = True
-            logger.info("Redis action processor started")
+            logger.info("Action processor started")
+            # Test Redis connection
+            await self._get_redis_connection()
             asyncio.create_task(self._process_actions_loop())
     
     async def stop(self):
         """Stop the action processor"""
         self.running = False
-        logger.info("Redis action processor stopped")
+        logger.info("Action processor stopped")
     
     async def _process_actions_loop(self):
         """Main loop for processing actions"""
@@ -56,7 +67,17 @@ class RedisActionProcessor:
                 await asyncio.sleep(self.processing_interval)
     
     async def _process_pending_actions(self):
-        """Process all pending actions from Redis queue"""
+        """Process all pending actions from Redis queue or fallback"""
+        try:
+            if self.redis_available:
+                await self._process_redis_actions()
+            else:
+                await self._process_fallback_actions()
+        except Exception as e:
+            logger.error(f"Error processing pending actions: {e}")
+    
+    async def _process_redis_actions(self):
+        """Process actions from Redis queue"""
         try:
             r = await self._get_redis_connection()
             if not r:
@@ -68,7 +89,7 @@ class RedisActionProcessor:
             if not actions:
                 return
             
-            logger.info(f"Processing {len(actions)} pending actions")
+            logger.info(f"Processing {len(actions)} pending actions from Redis")
             
             for action_json, score in actions:
                 try:
@@ -103,7 +124,45 @@ class RedisActionProcessor:
                     logger.error(f"Error processing action: {e}")
                     
         except Exception as e:
-            logger.error(f"Error processing pending actions: {e}")
+            logger.error(f"Error processing Redis actions: {e}")
+    
+    async def _process_fallback_actions(self):
+        """Process actions from in-memory fallback queue"""
+        if not self.fallback_queue:
+            return
+        
+        logger.info(f"Processing {len(self.fallback_queue)} pending actions from fallback queue")
+        
+        # Process actions in priority order
+        self.fallback_queue.sort(key=lambda x: x.get("priority", 1), reverse=True)
+        
+        processed_actions = []
+        for action_data in self.fallback_queue:
+            try:
+                device = action_data.get("device")
+                action_type = action_data.get("action_type")
+                priority = action_data.get("priority", 1)
+                
+                logger.info(f"Processing fallback action: {action_type} for {device} (priority: {priority})")
+                
+                # Execute the action
+                success = await self._execute_action(action_data)
+                
+                if success:
+                    logger.info(f"Fallback action {action_type} for {device} executed successfully")
+                    # Send WebSocket update
+                    await self._send_automation_update(device, action_data, "completed")
+                    processed_actions.append(action_data)
+                else:
+                    logger.error(f"Failed to execute fallback action {action_type} for {device}")
+                    
+            except Exception as e:
+                logger.error(f"Error processing fallback action: {e}")
+        
+        # Remove processed actions from queue
+        for action in processed_actions:
+            if action in self.fallback_queue:
+                self.fallback_queue.remove(action)
     
     async def _execute_action(self, action_data: Dict[str, Any]) -> bool:
         """Execute a single automation action"""
@@ -175,15 +234,27 @@ class RedisActionProcessor:
             logger.error(f"Failed to send automation update: {e}")
     
     async def add_action(self, action_data: Dict[str, Any]) -> bool:
-        """Add a new action to the Redis queue"""
+        """Add a new action to the queue (Redis or fallback)"""
+        try:
+            # Add timestamp if not present
+            if "timestamp" not in action_data:
+                action_data["timestamp"] = datetime.now().isoformat()
+            
+            if self.redis_available:
+                return await self._add_action_to_redis(action_data)
+            else:
+                return await self._add_action_to_fallback(action_data)
+                
+        except Exception as e:
+            logger.error(f"Failed to add action to queue: {e}")
+            return False
+    
+    async def _add_action_to_redis(self, action_data: Dict[str, Any]) -> bool:
+        """Add action to Redis queue"""
         try:
             r = await self._get_redis_connection()
             if not r:
                 return False
-            
-            # Add timestamp if not present
-            if "timestamp" not in action_data:
-                action_data["timestamp"] = datetime.now().isoformat()
             
             # Calculate priority score
             priority = action_data.get("priority", 1)
@@ -192,15 +263,38 @@ class RedisActionProcessor:
             # Add to queue
             await r.zadd(self.action_queue_key, {json.dumps(action_data): score})
             
-            logger.info(f"Added action to queue: {action_data.get('action_type')} for {action_data.get('device')}")
+            logger.info(f"Added action to Redis queue: {action_data.get('action_type')} for {action_data.get('device')}")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to add action to queue: {e}")
+            logger.error(f"Failed to add action to Redis queue: {e}")
+            return False
+    
+    async def _add_action_to_fallback(self, action_data: Dict[str, Any]) -> bool:
+        """Add action to fallback queue"""
+        try:
+            self.fallback_queue.append(action_data)
+            logger.info(f"Added action to fallback queue: {action_data.get('action_type')} for {action_data.get('device')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add action to fallback queue: {e}")
             return False
     
     async def get_queue_status(self) -> Dict[str, Any]:
         """Get current queue status"""
+        try:
+            if self.redis_available:
+                return await self._get_redis_queue_status()
+            else:
+                return await self._get_fallback_queue_status()
+                
+        except Exception as e:
+            logger.error(f"Failed to get queue status: {e}")
+            return {"error": str(e)}
+    
+    async def _get_redis_queue_status(self) -> Dict[str, Any]:
+        """Get Redis queue status"""
         try:
             r = await self._get_redis_connection()
             if not r:
@@ -225,11 +319,33 @@ class RedisActionProcessor:
                 "queue_size": queue_size,
                 "pending_actions": pending_actions,
                 "processor_running": self.running,
+                "storage_type": "redis",
                 "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
-            logger.error(f"Failed to get queue status: {e}")
+            logger.error(f"Failed to get Redis queue status: {e}")
+            return {"error": str(e)}
+    
+    async def _get_fallback_queue_status(self) -> Dict[str, Any]:
+        """Get fallback queue status"""
+        try:
+            pending_actions = []
+            for action_data in self.fallback_queue:
+                action_copy = action_data.copy()
+                action_copy["priority_score"] = action_data.get("priority", 1)
+                pending_actions.append(action_copy)
+            
+            return {
+                "queue_size": len(self.fallback_queue),
+                "pending_actions": pending_actions,
+                "processor_running": self.running,
+                "storage_type": "fallback",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get fallback queue status: {e}")
             return {"error": str(e)}
 
 # Global instance
@@ -238,9 +354,9 @@ redis_processor = RedisActionProcessor()
 async def initialize_redis_processor():
     """Initialize the Redis action processor"""
     await redis_processor.start()
-    logger.info("Redis action processor initialized")
+    logger.info("Action processor initialized")
 
 async def stop_redis_processor():
     """Stop the Redis action processor"""
     await redis_processor.stop()
-    logger.info("Redis action processor stopped")
+    logger.info("Action processor stopped")

@@ -1,4 +1,4 @@
-# backend/app/routers/predict.py
+# backend/app/routers/predict_simple.py
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from datetime import datetime
@@ -62,3 +62,4 @@ async def predict_device_with_automation(device: str, k: int = Query(120, descri
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting automated prediction: {str(e)}")
+

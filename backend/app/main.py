@@ -6,6 +6,8 @@ import os, json
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.routers import actions, predict, dashboard
 from app.ws import websocket_endpoint
@@ -21,7 +23,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting NEUROSHIELD Backend...")
     
                 # Initialize services
-            try:
+    try:
                 from app.services.broadcaster import initialize_broadcaster
                 from app.services.network_automation import initialize_automation_service
                 from app.services.redis_processor import initialize_redis_processor
@@ -30,14 +32,14 @@ async def lifespan(app: FastAPI):
                 await initialize_automation_service()
                 await initialize_redis_processor()
                 logger.info("All services initialized successfully")
-            except Exception as e:
+    except Exception as e:
                 logger.error(f"Error initializing services: {e}")
     
     yield
     
                 # Shutdown
-            logger.info("Shutting down NEUROSHIELD Backend...")
-            try:
+    logger.info("Shutting down NEUROSHIELD Backend...")
+    try:
                 from app.services.broadcaster import broadcaster
                 from app.services.network_automation import automation_service
                 from app.services.redis_processor import stop_redis_processor
@@ -46,10 +48,25 @@ async def lifespan(app: FastAPI):
                 await automation_service.stop()
                 await stop_redis_processor()
                 logger.info("All services stopped")
-            except Exception as e:
+    except Exception as e:
                 logger.error(f"Error stopping services: {e}")
 
 app = FastAPI(title="NEUROSHIELD Backend", lifespan=lifespan)
+
+# --- CORS Middleware ---
+# In production, restrict allow_origins to your frontend URL(s)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # TODO: Restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Manual OPTIONS handler for CORS preflight (for completeness) ---
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return JSONResponse(content={"message": "OK"})
 
 # Include routers
 app.include_router(actions.router)
@@ -65,7 +82,6 @@ async def websocket_main(websocket: WebSocket):
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 QUEUE_KEY = os.getenv("QUEUE_KEY", "telegraf:metrics")
 r = redis.from_url(REDIS_URL, decode_responses=True)
-
 
 # ✅ Define the Router Log Schema
 class RouterLog(BaseModel):

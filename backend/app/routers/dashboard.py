@@ -8,7 +8,6 @@ import pandas as pd
 import os
 import redis.asyncio as redis
 
-from app.services.model_service import ModelService
 from app.services.db import db_service
 from app.services.network_automation import automation_service, ActionType
 from app.services.broadcaster import broadcaster, EventType
@@ -17,12 +16,14 @@ from app.ws import websocket_endpoint, manager as ws_manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-model_service = ModelService()
 
 @router.get("/api/dashboard/overview")
 async def get_dashboard_overview():
     """Get overall dashboard overview with key metrics"""
     try:
+        from app.services.model_service import ModelService
+        model_service = ModelService()
+        
         # Get all devices
         devices = model_service.get_devices()
         
@@ -85,6 +86,8 @@ async def get_dashboard_overview():
 async def get_automation_policies():
     """Get current automation policies"""
     try:
+        from app.services.model_service import ModelService
+        model_service = ModelService()
         policies = model_service.get_automation_policies()
         return {
             "policies": policies,
@@ -97,6 +100,8 @@ async def get_automation_policies():
 async def update_automation_policies(policies: Dict[str, Any]):
     """Update automation policies"""
     try:
+        from app.services.model_service import ModelService
+        model_service = ModelService()
         success = model_service.update_automation_policies(policies)
         if success:
             return {"message": "Policies updated successfully", "policies": model_service.get_automation_policies()}
@@ -109,6 +114,8 @@ async def update_automation_policies(policies: Dict[str, Any]):
 async def get_automated_predictions(k: int = Query(120, description="Number of recent data points to use")):
     """Get predictions with automation evaluation for all devices"""
     try:
+        from app.services.model_service import ModelService
+        model_service = ModelService()
         predictions = await model_service.evaluate_all_devices_with_automation(k=k)
         return {
             "predictions": predictions,
@@ -221,6 +228,9 @@ async def execute_automation_action(action_id: str):
 async def get_device_dashboard(device_name: str, hours: int = Query(24, description="Hours of data to retrieve")):
     """Get detailed dashboard data for a specific device"""
     try:
+        from app.services.model_service import ModelService
+        model_service = ModelService()
+        
         # Get recent predictions
         prediction = model_service.predict_for_device(device_name, k=100)
         
@@ -284,6 +294,9 @@ async def get_hourly_metrics(device_name: Optional[str] = None, hours: int = Que
 async def get_active_alerts(device_name: Optional[str] = None, limit: int = Query(50)):
     """Get active alerts and recent events"""
     try:
+        from app.services.model_service import ModelService
+        model_service = ModelService()
+        
         # Get recent high-priority events
         events = db_service.get_recent_events(limit, device_name=device_name)
         
@@ -332,7 +345,8 @@ async def get_active_alerts(device_name: Optional[str] = None, limit: int = Quer
 async def get_network_topology():
     """Get network topology information"""
     try:
-        devices = model_service.get_devices()
+        from app.services.model_service import ModelService
+        model_service = ModelService()
         
         # Get device configurations
         device_configs = automation_service.get_all_device_configs()
@@ -341,13 +355,13 @@ async def get_network_topology():
             "nodes": [],
             "edges": [],
             "summary": {
-                "total_devices": len(devices),
+                "total_devices": len(model_service.get_devices()),
                 "active_devices": 0,
                 "total_bandwidth": 0
             }
         }
         
-        for device in devices:
+        for device in model_service.get_devices():
             config = device_configs.get(device, {})
             
             # Get latest status
@@ -384,8 +398,8 @@ async def get_network_topology():
             topology["summary"]["total_bandwidth"] += config.get("max_bandwidth", 100)
         
         # Create simple mesh topology (all devices connected to each other)
-        for i, device1 in enumerate(devices):
-            for j, device2 in enumerate(devices):
+        for i, device1 in enumerate(model_service.get_devices()):
+            for j, device2 in enumerate(model_service.get_devices()):
                 if i < j:  # Avoid duplicate edges
                     topology["edges"].append({
                         "source": device1,
@@ -404,6 +418,9 @@ async def get_network_topology():
 async def trigger_automation_action(action_data: Dict[str, Any]):
     """Trigger an automation action from the dashboard"""
     try:
+        from app.services.model_service import ModelService
+        model_service = ModelService()
+        
         action_type_str = action_data.get("action_type")
         device_name = action_data.get("device_name")
         parameters = action_data.get("parameters", {})
@@ -443,6 +460,7 @@ async def trigger_automation_action(action_data: Dict[str, Any]):
 async def get_action_status(action_id: str):
     """Get status of a specific action"""
     try:
+        from app.services.network_automation import automation_service
         status = automation_service.get_action_status(action_id)
         if not status:
             raise HTTPException(status_code=404, detail="Action not found")
