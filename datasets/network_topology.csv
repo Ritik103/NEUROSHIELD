@@ -1,0 +1,8 @@
+Node_1,Node_2,Capacity_MBps
+Router_A,Switch_2,100
+Router_A,Server_1,100
+Router_B,Switch_2,500
+Router_B,Server_1,500
+Switch_1,Switch_2,100
+Switch_1,Server_2,100
+Server_1,Server_2,200

@@ -1,0 +1,61 @@
+Date,Device,Config_Change,Details
+2024-04-20,Router_A,Bandwidth increase,Automated script adjustment
+2024-04-20,Router_B,Bandwidth increase,Automated script adjustment
+2024-04-20,Switch_1,QoS change,Automated script adjustment
+2024-04-20,Switch_2,Bandwidth decrease,Automated script adjustment
+2024-04-21,Router_A,Bandwidth increase,Automated script adjustment
+2024-04-21,Router_B,Bandwidth decrease,Automated script adjustment
+2024-04-21,Switch_1,QoS change,Automated script adjustment
+2024-04-21,Switch_2,Routing policy update,Automated script adjustment
+2024-04-22,Router_A,Routing policy update,Automated script adjustment
+2024-04-22,Router_B,Bandwidth increase,Automated script adjustment
+2024-04-22,Switch_1,QoS change,Automated script adjustment
+2024-04-22,Switch_2,Bandwidth increase,Automated script adjustment
+2024-04-23,Router_A,QoS change,Automated script adjustment
+2024-04-23,Router_B,QoS change,Automated script adjustment
+2024-04-23,Switch_1,Bandwidth increase,Automated script adjustment
+2024-04-23,Switch_2,Bandwidth decrease,Automated script adjustment
+2024-04-24,Router_A,Bandwidth increase,Automated script adjustment
+2024-04-24,Router_B,Bandwidth decrease,Automated script adjustment
+2024-04-24,Switch_1,Bandwidth decrease,Automated script adjustment
+2024-04-24,Switch_2,Routing policy update,Automated script adjustment
+2024-04-25,Router_A,Bandwidth decrease,Automated script adjustment
+2024-04-25,Router_B,Routing policy update,Automated script adjustment
+2024-04-25,Switch_1,Bandwidth increase,Automated script adjustment
+2024-04-25,Switch_2,QoS change,Automated script adjustment
+2024-04-26,Router_A,Routing policy update,Automated script adjustment
+2024-04-26,Router_B,Bandwidth increase,Automated script adjustment
+2024-04-26,Switch_1,Routing policy update,Automated script adjustment
+2024-04-26,Switch_2,Bandwidth increase,Automated script adjustment
+2024-04-27,Router_A,QoS change,Automated script adjustment
+2024-04-27,Router_B,QoS change,Automated script adjustment
+2024-04-27,Switch_1,Routing policy update,Automated script adjustment
+2024-04-27,Switch_2,Routing policy update,Automated script adjustment
+2024-04-28,Router_A,QoS change,Automated script adjustment
+2024-04-28,Router_B,Bandwidth increase,Automated script adjustment
+2024-04-28,Switch_1,Bandwidth decrease,Automated script adjustment
+2024-04-28,Switch_2,Bandwidth increase,Automated script adjustment
+2024-04-29,Router_A,Bandwidth increase,Automated script adjustment
+2024-04-29,Router_B,Routing policy update,Automated script adjustment
+2024-04-29,Switch_1,QoS change,Automated script adjustment
+2024-04-29,Switch_2,Routing policy update,Automated script adjustment
+2024-04-30,Router_A,Bandwidth decrease,Automated script adjustment
+2024-04-30,Router_B,QoS change,Automated script adjustment
+2024-04-30,Switch_1,Routing policy update,Automated script adjustment
+2024-04-30,Switch_2,QoS change,Automated script adjustment
+2024-05-01,Router_A,QoS change,Automated script adjustment
+2024-05-01,Router_B,Bandwidth increase,Automated script adjustment
+2024-05-01,Switch_1,Bandwidth decrease,Automated script adjustment
+2024-05-01,Switch_2,QoS change,Automated script adjustment
+2024-05-02,Router_A,Bandwidth increase,Automated script adjustment
+2024-05-02,Router_B,QoS change,Automated script adjustment
+2024-05-02,Switch_1,Routing policy update,Automated script adjustment
+2024-05-02,Switch_2,Bandwidth increase,Automated script adjustment
+2024-05-03,Router_A,QoS change,Automated script adjustment
+2024-05-03,Router_B,Bandwidth decrease,Automated script adjustment
+2024-05-03,Switch_1,QoS change,Automated script adjustment
+2024-05-03,Switch_2,Bandwidth decrease,Automated script adjustment
+2024-05-04,Router_A,Bandwidth increase,Automated script adjustment
+2024-05-04,Router_B,Bandwidth increase,Automated script adjustment
+2024-05-04,Switch_1,Bandwidth decrease,Automated script adjustment
+2024-05-04,Switch_2,Routing policy update,Automated script adjustment

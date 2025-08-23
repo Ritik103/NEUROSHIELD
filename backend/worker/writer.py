@@ -1,35 +1,46 @@
-import os, json, time, asyncio, sqlite3
+
+import os, json, sqlite3, asyncio
 import redis.asyncio as redis
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 QUEUE_KEY = os.getenv("QUEUE_KEY", "telegraf:metrics")
 DB_PATH   = os.getenv("DB_PATH", "metrics.db")
 
+
 def ensure_schema(conn: sqlite3.Connection):
-    # Very simple schema: store original payload and some useful breakouts
     conn.execute("""
-    CREATE TABLE IF NOT EXISTS metrics(
+    CREATE TABLE IF NOT EXISTS router_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts INTEGER,
-        device TEXT,
-        measurement TEXT,
-        fields_json TEXT,
-        tags_json TEXT,
-        raw_json TEXT
+        Timestamp TEXT,
+        Device_Name TEXT,
+        Source_IP TEXT,
+        Destination_IP TEXT,
+        Traffic_Volume REAL,
+        Latency REAL,
+        Bandwidth_Allocated REAL,
+        Bandwidth_Used REAL,
+        Congestion_Flag TEXT,
+        Log_Text TEXT
     )
     """)
-    # WAL mode improves concurrency
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.commit()
 
+
 def extract_row(m: dict):
-    # Try to normalize common Telegraf JSON fields
-    ts = int(m.get("time") or m.get("timestamp") or time.time())
-    measurement = m.get("name") or m.get("measurement") or "unknown"
-    tags = m.get("tags") or {}
-    fields = m.get("fields") or m.get("values") or {}
-    device = tags.get("agent_host") or tags.get("host") or tags.get("device") or "unknown"
-    return (ts, device, measurement, json.dumps(fields), json.dumps(tags), json.dumps(m))
+    return (
+        m.get("Timestamp"),
+        m.get("Device Name"),
+        m.get("Source IP"),
+        m.get("Destination IP"),
+        float(m.get("Traffic Volume (MB/s)", 0)),
+        float(m.get("Latency (ms)", 0)),
+        float(m.get("Bandwidth Allocated (MB/s)", 0)),
+        float(m.get("Bandwidth Used (MB/s)", 0)),
+        m.get("Congestion Flag"),
+        m.get("Log Text")
+    )
+
 
 async def main():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -38,27 +49,22 @@ async def main():
 
     print("Writer started. Waiting for metrics...")
     while True:
-        # Block-pop one item; tune timeout as needed
         item = await r.blpop(QUEUE_KEY, timeout=5)
         if not item:
             continue
         _, data = item
         payload = json.loads(data)
 
-        rows = []
-        if isinstance(payload, list):
-            for m in payload:
-                if isinstance(m, dict):
-                    rows.append(extract_row(m))
-        elif isinstance(payload, dict):
-            rows.append(extract_row(payload))
+        row = extract_row(payload)
+        conn.execute("""
+            INSERT INTO router_logs
+            (Timestamp, Device_Name, Source_IP, Destination_IP,
+             Traffic_Volume, Latency, Bandwidth_Allocated, Bandwidth_Used,
+             Congestion_Flag, Log_Text)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, row)
+        conn.commit()
 
-        if rows:
-            conn.executemany(
-                "INSERT INTO metrics (ts, device, measurement, fields_json, tags_json, raw_json) VALUES (?,?,?,?,?,?)",
-                rows
-            )
-            conn.commit()
 
 if __name__ == "__main__":
     asyncio.run(main())

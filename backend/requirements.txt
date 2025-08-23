@@ -3,3 +3,5 @@ uvicorn[standard]
 redis>=5
 pydantic
 python-dotenv
+pandas
+requests
